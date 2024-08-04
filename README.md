@@ -4,18 +4,23 @@
 
 ```rust
 use calamine_to_polars::*;
+use polars::frame::DataFrame;
 
 fn main() -> Result<(), calamine::Error> {
 
-    let mut reader = CalamineToPolarsReader::new("your_data.xlsx");
+    // Loading Excel
+    let mut reader = CalamineToPolarsReader::new("YOUR_DATA.xlsx");
 
-    // Specify the sheet's name, e.g. "Sheet1"
-    let df = reader.open_sheet("Sheet1").unwrap().to_df();
+    // Use `to_df()` to get a Polars DataFrame:
+    let df: DataFrame = reader.open_sheet("Sheet1").unwrap().to_df().unwrap();
 
-    println!("{:#?}", df);
+    // println!("{:#?}", df); // Prints the DataFrame
 
-    // Getting header names
+
+    // Get Sheet1 column titles
     let column_names = reader.get_column_names("Sheet1")?;
+    println!("{:#?}", column_names);
+
 
     Ok(())
 }
