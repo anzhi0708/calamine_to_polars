@@ -96,3 +96,32 @@ impl CalamineToPolarsReader {
         return Err(CalamineError::Msg("Missing column name"));
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    pub fn calamine_datatypes() {
+        let test_excel = "/Users/anjiwong/Downloads/test-excel.xlsx";
+        use calamine::{open_workbook, Reader, Xlsx};
+
+        let mut workbook: Xlsx<_> = open_workbook(test_excel).expect("Cannot open file");
+
+        if let Ok(range) = workbook.worksheet_range("Sheet1") {
+            // each ROW
+            for (row_index, row) in range.rows().enumerate() {
+                for (col_index, cell) in row.iter().enumerate() {
+                    print!("{row_index}, {col_index} - ");
+                    dbg!(cell);
+                    match cell {
+                        c if c.is_int() => println!("int"),
+                        c if c.is_float() => println!("float"),
+                        c if c.is_string() => println!("string"),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
