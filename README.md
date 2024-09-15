@@ -1,4 +1,5 @@
 # Calamine -> Polars DataFrame
+⚠️ Under construction
 
 ## Example
 
@@ -6,20 +7,34 @@
 use calamine_to_polars::*;
 use polars::frame::DataFrame;
 
-fn main() -> Result<(), calamine::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
 
     // Loading Excel
-    let mut reader = CalamineToPolarsReader::new("YOUR_DATA.xlsx");
+    //
+    let file_path = args().nth(1).unwrap();
+    let sheet_name = args().nth(2).unwrap();
 
-    // Use `to_df()` to get a Polars DataFrame:
-    let df: DataFrame = reader.open_sheet("Sheet1").unwrap().to_df().unwrap();
+    let mut df: DataFrame = CalamineToPolarsReader::new(file_path)
+        .open_sheet(sheet_name)
+        .unwrap()
+        .to_frame_all_str()  // This method reads each cell's data as a string, you can cast a column's datatype later
+        .unwrap();
 
-    // println!("{:#?}", df); // Prints the DataFrame
+    // Before casting
+    println!("{:#?}", df);
 
+    // Convenient cast
+    df = df
+        .with_types(&[
+            // Change column name to match yours
+            ("상품합계", Float32),
+            // Change column name to match yours
+            ("수량", Int32),
+        ])
+        .unwrap();
 
-    // Get Sheet1 column titles
-    let column_names = reader.get_column_names("Sheet1")?;
-    println!("{:#?}", column_names);
+    // After convenient casting
+    println!("{:#?}", df);
 
 
     Ok(())
