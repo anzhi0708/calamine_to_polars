@@ -11,8 +11,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Loading Excel
     //
-    let file_path = args().nth(1).unwrap();
-    let sheet_name = args().nth(2).unwrap();
+    let file_path = "/path/to/your/excel.xlsx";
+    let sheet_name = "sheet name";
 
     let mut df: DataFrame = CalamineToPolarsReader::new(file_path)
         .open_sheet(sheet_name)
