@@ -11,10 +11,9 @@ use polars::datatypes::DataType::{Float32, Int32};
 
 fn main() -> Result<(), Box<dyn Error>> {
 
-    // Loading Excel
+    // Read Excel to DataFrame
     let file_path = "/path/to/your/excel.xlsx";
     let sheet_name = "sheet name";
-    // Read to DataFrame
     let mut df: DataFrame = CalamineToPolarsReader::new(file_path)
         .open_sheet(sheet_name)
         .unwrap()
