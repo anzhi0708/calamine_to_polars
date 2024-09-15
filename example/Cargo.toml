@@ -1,8 +1,9 @@
 [package]
-name = "calamine_to_polars"
+name = "example"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+calamine_to_polars = {path = "../"}
 calamine = "0.25.0"
 polars = "0.43.1"

@@ -1,21 +1,60 @@
+use std::{error::Error, fmt::Display, fs::File, io::BufReader, path::Path};
+
 use calamine::{CellType, Data, DataType, Error as CalamineError, Range, Reader, Xlsx};
 use polars::prelude::*;
 use polars::{frame::DataFrame, series::Series};
-use std::{error::Error, fmt::Display, fs::File, io::BufReader, path::Path};
 
 pub struct CalamineToPolarsReader {
     workbook: Xlsx<BufReader<File>>,
 }
 
+/// Implelemt pandas style type catsing API for specified column(s).
+pub trait ConvenientCast<'a> {
+    fn with_types(
+        &mut self,
+        col_and_type: &'a [(&'a str, polars::datatypes::DataType)],
+    ) -> Result<DataFrame, Box<dyn Error>>;
+}
+
+impl<'a> ConvenientCast<'a> for DataFrame {
+    fn with_types(
+        &mut self,
+        col_and_type: &'a [(&'a str, polars::datatypes::DataType)],
+    ) -> Result<DataFrame, Box<dyn Error>> {
+        let mut all_series: Vec<Series> = Vec::new();
+        for column in self.get_columns() {
+            let mut is_column_added = false;
+            for (col_name, col_cast_type) in col_and_type {
+                if col_name == column.name() {
+                    all_series.push(column.cast(col_cast_type).unwrap());
+                    is_column_added = true;
+                }
+            } // end of inner for
+            if !is_column_added {
+                all_series.push(column.to_owned());
+            }
+        } // end of outer for
+        Ok(DataFrame::new(all_series).unwrap())
+    }
+}
+
+/// Implement API interfaces on calamine Range<T>
+/// to convert calamine Excel data to Polars DataFrame.
+///
 pub trait ToPolarsDataFrame {
-    fn to_df(&mut self) -> Result<DataFrame, Box<dyn Error>>;
+    /// This method assumes the input calamine Excel data
+    /// has headers (column titles).
+    /// It tries to convert Excel data into strongly-typed DataFrame.
+    fn to_frame_auto_type(&mut self) -> Result<DataFrame, Box<dyn Error>>;
+    /// Convert to DataFrame but everything's a String
+    fn to_frame_all_str(&self) -> Result<DataFrame, Box<dyn Error>>;
 }
 
 impl<T> ToPolarsDataFrame for Range<T>
 where
     T: DataType + CellType + Display,
 {
-    fn to_df(&mut self) -> Result<DataFrame, Box<dyn Error>> {
+    fn to_frame_all_str(&self) -> Result<DataFrame, Box<dyn Error>> {
         let mut columns = Vec::new();
 
         // Headers
@@ -43,11 +82,147 @@ where
         let series: Vec<Series> = columns
             .into_iter()
             .zip(headers)
-            .map(|(col, name)| Series::new(&name, col))
+            .map(|(col, name)| Series::new((&name).into(), col))
             .collect();
 
         // constructing DataFrame
         let df = DataFrame::new(series)?;
+
+        Ok(df)
+    }
+
+    fn to_frame_auto_type(&mut self) -> Result<DataFrame, Box<dyn Error>> {
+        let mut columns: Vec<Series> = Vec::new();
+        let mut column_types: Vec<polars::datatypes::DataType> = Vec::new();
+        // Headers
+        let headers: Vec<String> = self
+            .rows()
+            .next()
+            .ok_or("No data")?
+            .iter()
+            .map(|cell| cell.to_string())
+            .collect();
+
+        // Vec<String> for each column
+        for _ in 0..headers.len() {
+            column_types.push(polars::datatypes::DataType::Null);
+        }
+
+        // The first row of the ramaining part decides each column's data type
+        for (col_index, cell) in self.rows().nth(1).unwrap().iter().enumerate() {
+            let header = headers[col_index].as_str();
+            match cell {
+                c if c.is_int() => {
+                    column_types[col_index] = polars::datatypes::DataType::Int64;
+                    columns.push(Series::new(header.into(), [cell.get_int().unwrap()]));
+                }
+                c if c.is_float() => {
+                    column_types[col_index] = polars::datatypes::DataType::Float64;
+                    columns.push(Series::new(header.into(), [cell.get_float().unwrap()]));
+                }
+                c if c.is_bool() => {
+                    column_types[col_index] = polars::datatypes::DataType::Boolean;
+                    columns.push(Series::new(header.into(), [cell.get_bool().unwrap()]));
+                }
+                c if c.is_string() => {
+                    column_types[col_index] = polars::datatypes::DataType::String;
+                    columns.push(Series::new(header.into(), [cell.get_string().unwrap()]));
+                }
+                c if c.is_empty() => {
+                    column_types[col_index] = polars::datatypes::DataType::Null;
+                    columns.push(Series::new(
+                        header.into(),
+                        [cell.get_string().unwrap_or_default()],
+                    ));
+                }
+                c if c.is_error() => {
+                    panic!("This cell is error. The first row of the ramaining part decides each column's data type");
+                }
+                _ => {
+                    panic!("Unknown error. The first row of the ramaining part decides each column's data type");
+                }
+            }
+            // todo!()
+        }
+        dbg!(DataFrame::new(columns.clone()).unwrap());
+
+        // iterating through all rows remaining
+        for (row_index, row) in self.rows().skip(2).enumerate() {
+            for (col_idx, cell) in row.iter().enumerate() {
+                let header = headers[col_idx].as_str();
+                match cell {
+                    c if c.is_int() => {
+                        let new_series = Series::new(header.into(), [c.get_int()]);
+
+                        let append_result = columns[col_idx].append(&new_series);
+                        match append_result {
+                            Ok(_) => {}
+                            Err(_) => {
+                                eprintln!(
+                                    "{}",
+                                    format!("row {row_index}, col {header} (column index {col_idx}): expected int").as_str()
+                                );
+                                dbg!(&new_series);
+                            }
+                        }
+                        /*
+                        columns[col_idx].append(&new_series).expect(
+                                format!("row {row_index}, col {header} (column index {col_idx}): expected int").as_str()
+                        );
+                        */
+                    }
+                    c if c.is_float() => {
+                        let new_series = Series::new(header.into(), [c.get_float()]);
+
+                        let append_result = columns[col_idx].append(&new_series);
+                        match append_result {
+                            Ok(_) => {}
+                            Err(_) => {
+                                eprintln!(
+                                    "{}",
+                                    format!("row {row_index}, col {header} (column index {col_idx}): expected float").as_str()
+                                );
+                                dbg!(&new_series);
+                            }
+                        }
+                        /*
+                        columns[col_idx].append(&new_series).expect(
+                                format!("row {row_index}, col {header} (column index {col_idx}): expected float").as_str()
+                        );
+                        */
+                        /*
+                        columns[col_idx].append(&new_series).expect(
+                            format!("row {row_index}, col {header} (column index {col_idx}): expected float").as_str(),
+                        );
+                        */
+                    }
+                    c if c.is_bool() => {
+                        let new_series = Series::new(header.into(), [c.get_bool()]);
+                        columns[col_idx].append(&new_series).expect(
+                            format!("row {row_index}, col {header} (column index {col_idx}): expected bool").as_str(),
+                        );
+                    }
+                    c if c.is_string() => {
+                        let new_series = Series::new(header.into(), [c.get_string()]);
+                        columns[col_idx].append(&new_series).expect(
+                            format!("row {row_index}, col {header} (column index {col_idx}): expected string").as_str(),
+                        );
+                    }
+                    c if c.is_empty() => {
+                        let new_series = Series::new_empty(
+                            header.into(),
+                            polars::datatypes::DataType::Null.as_ref(),
+                        );
+                        columns[col_idx].append(&new_series).unwrap();
+                    }
+                    _ => {
+                        panic!("Error when reading all data...")
+                    }
+                }
+            }
+        }
+
+        let df = DataFrame::new(columns)?;
 
         Ok(df)
     }
@@ -94,34 +269,5 @@ impl CalamineToPolarsReader {
         }
 
         return Err(CalamineError::Msg("Missing column name"));
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    #[test]
-    pub fn calamine_datatypes() {
-        let test_excel = "/Users/anjiwong/Downloads/test-excel.xlsx";
-        use calamine::{open_workbook, Reader, Xlsx};
-
-        let mut workbook: Xlsx<_> = open_workbook(test_excel).expect("Cannot open file");
-
-        if let Ok(range) = workbook.worksheet_range("Sheet1") {
-            // each ROW
-            for (row_index, row) in range.rows().enumerate() {
-                for (col_index, cell) in row.iter().enumerate() {
-                    print!("{row_index}, {col_index} - ");
-                    dbg!(cell);
-                    match cell {
-                        c if c.is_int() => println!("int"),
-                        c if c.is_float() => println!("float"),
-                        c if c.is_string() => println!("string"),
-                        _ => {}
-                    }
-                }
-            }
-        }
     }
 }
