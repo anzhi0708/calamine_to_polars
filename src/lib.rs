@@ -57,43 +57,47 @@ impl<T> ToPolarsDataFrame for Range<T>
 where
     T: DataType + CellType + Display,
 {
-    fn to_frame_with_types(&self, column_dtype: &HashMap<&str, polars::datatypes::DataType>) {
+    fn to_frame_with_types(&self, _column_dtype: &HashMap<&str, polars::datatypes::DataType>) {
         todo!();
     }
 
     fn to_frame_all_str(&self) -> Result<DataFrame, Box<dyn Error>> {
-        let mut columns = Vec::new();
+        let all_rows = self.rows().collect::<Vec<_>>();
 
-        // iterating and writing headers or duplicate headers
+        // iterating or duplicate headers
         let mut header_counts = HashMap::<String, usize>::new();
-        let headers: Vec<String> = match self.rows().next() {
-            Some(first_row) => first_row
-                .iter()
-                .map(|cell| {
-                    let cell_str = cell.to_string();
-                    let count = header_counts.entry(cell_str.clone()).or_insert(0);
-                    let current_count = *count;
-                    *count += 1;
-                    if current_count > 0 {
-                        format!("{}_duplicated_{}", cell_str, current_count - 1)
-                    } else {
-                        cell_str
-                    }
-                })
-                .collect(),
-            None => return Err("No data".into()),
-        };
+        let headers: Vec<String> = all_rows
+            .first()
+            .ok_or("No data")?
+            .iter()
+            .map(|cell| {
+                let count = header_counts.entry(cell.to_string()).or_insert(0);
+                let name = if *count > 0 {
+                    format!("{}_duplicated_{}", cell, count)
+                } else {
+                    cell.to_string()
+                };
+                *count += 1;
+                name
+            })
+            .collect();
 
-        // Vec<String> for each column
-        for _ in 0..headers.len() {
-            columns.push(Vec::<String>::new());
-        }
+        // pre allocated column memory
+        let mut columns: Vec<Vec<String>> = vec![vec![]; headers.len()];
+        columns.iter_mut().for_each(|v| v.reserve(all_rows.len()));
 
         // iterating through all rows
-        for row in self.rows().skip(1) {
-            for (col_idx, cell) in row.iter().enumerate() {
-                columns[col_idx].push(cell.to_string());
-            }
+        for row in &all_rows[1..] {
+            row.iter().enumerate().for_each(|(col_idx, cell)| {
+                let cell_str = match cell {
+                    c if c.is_datetime() => c
+                        .as_datetime()
+                        .map(|dt| dt.to_string())
+                        .unwrap_or_else(|| String::new()),
+                    _ => cell.to_string(),
+                };
+                columns[col_idx].push(cell_str);
+            });
         }
 
         // list of `Column`s
