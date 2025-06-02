@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-calamine = { version = "0.27.0", features = ["dates"] }
-polars = "0.46.0"
+# calamine = { version = "0.27.0", features = ["dates"] }
+calamine = { git = "https://github.com/prophittcorey/calamine", branch = "fix/zip-3.0", features = ["dates"] }
+polars = { version = "0.48.1", features = ["partition_by"] }

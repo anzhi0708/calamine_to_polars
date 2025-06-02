@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 calamine_to_polars = {path = "../"}
 calamine = "0.26.1"
-polars = "0.46.0"
+polars = { version = "0.48.1", features = ["partition_by"] }

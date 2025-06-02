@@ -11,11 +11,11 @@ fn main() {
 fn test_df() -> Result<(), Box<dyn Error>> {
     use std::env::args;
     if args().count() < 2 {
-        eprintln!("No file path, no sheet name found");
+        eprintln!("None of the required 2 command-line arguments `file path`, `sheet name` was not provided");
         exit(-1);
     }
     if args().count() < 3 {
-        eprintln!("No sheet name found");
+        eprintln!("The required command-line argument `sheet name` was not provided");
         exit(-1);
     }
 
@@ -40,5 +40,20 @@ fn test_df() -> Result<(), Box<dyn Error>> {
 
     // After convenient casting
     println!("{:#?}", df["수량"]);
+    println!("{:#?}", df);
+
+
+    let gb = df.group_by(["Group"])?;
+    let groups = gb.groups();
+
+    for element in groups.iter() {
+        println!("{:?}", element);
+    }
+
+    let parts = df.partition_by(["Group"], false)?;
+    for part in parts {
+        println!("{:#?}", part);
+    }
+    
     Ok(())
 }
